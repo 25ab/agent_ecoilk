@@ -21,39 +21,40 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Load data & build RAG on startup ─────────────────────────────
+rag_chain = None
+llm = None
+
 @app.on_event("startup")
 async def startup():
     global rag_chain, llm
 
-    # LLM
+    # ── LLM ──────────────────────────────────────────────────────
     llm = ChatGroq(
         api_key=os.environ["GROQ_API_KEY"],
         model_name="llama-3.3-70b-versatile"
-)
+    )
 
-    # Load Excel
-    
+    # ── Load CSV ──────────────────────────────────────────────────
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    df = pd.read_excel(os.path.join(base_dir, "wordpress_ecoilk_data.xlsx"))
+    df = pd.read_csv(os.path.join(base_dir, "data.csv"))
     df = df[["title", "content", "date"]].dropna(subset=["content"])
     df["text"] = df.apply(
         lambda row: f"Title: {row['title']}\nDate: {row['date']}\nContent: {row['content']}",
         axis=1
     )
 
-    # Embeddings & vector store
+    # ── Embeddings & vector store ─────────────────────────────────
     embeddings = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/all-MiniLM-L6-v2",
-    model_kwargs={"device": "cpu"},
-    encode_kwargs={"batch_size": 32, "normalize_embeddings": True}
+        model_name="sentence-transformers/all-MiniLM-L6-v2",
+        model_kwargs={"device": "cpu"},
+        encode_kwargs={"batch_size": 32, "normalize_embeddings": True}
     )
     docs = [
-    Document(
-        page_content=row["text"],
-        metadata={"title": row["title"], "date": str(row["date"])}
-    )
-    for _, row in df.iterrows()
+        Document(
+            page_content=row["text"],
+            metadata={"title": row["title"], "date": str(row["date"])}
+        )
+        for _, row in df.iterrows()
     ]
     vectorstore = FAISS.from_documents(docs, embeddings)
     retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
@@ -61,6 +62,7 @@ async def startup():
     def format_docs(docs):
         return "\n\n".join([d.page_content[:800] for d in docs])
 
+    # ── RAG chain ─────────────────────────────────────────────────
     prompt = PromptTemplate.from_template("""
 You are a helpful assistant for the ECOILK website.
 Use the context below to answer the question as fully as possible.
@@ -81,6 +83,7 @@ Answer:
         | llm
         | StrOutputParser()
     )
+    print("✅ RAG chain ready!")
 
 # ── Web search ────────────────────────────────────────────────────
 def web_search(query: str) -> str:
@@ -125,6 +128,7 @@ Give a clear, concise answer.""")
 @app.get("/health")
 async def health():
     return {"status": "running"}
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
