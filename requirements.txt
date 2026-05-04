@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+langchain
+langchain-community
+langchain-core
+langchain-groq
+faiss-cpu
+sentence-transformers
+ddgs
+pandas
+openpyxl
+pydantic
